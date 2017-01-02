@@ -105,7 +105,7 @@ fieldBlock = impl where
   remainingLines field_indent_level = reverse <$> go [] where
     go cur_lines = (P.eof *> pure cur_lines) <|> foundSomething cur_lines
     foundSomething cur_lines = do
-      void $ P.sepBy (P.try ignoredLine) (P.try P.eol)
+      void $ many $ P.try (emptyLine *> finishLine)
       this_level <- P.lookAhead indent
       if this_level <= field_indent_level
         then pure cur_lines
