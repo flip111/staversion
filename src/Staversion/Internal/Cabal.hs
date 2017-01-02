@@ -66,8 +66,8 @@ finishLine :: P.Parser ()
 finishLine = P.eof <|> void P.eol
 
 emptyLine :: P.Parser ()
-emptyLine = indent *> (comment_line <|> finishLine) where
-  comment_line = (P.try $ P.string "--") *> P.manyTill P.anyChar finishLine *> pure ()
+emptyLine = P.try indent *> (comment_line <|> P.lookAhead finishLine) where
+  comment_line = (P.try $ P.string "--") *> P.manyTill P.anyChar (P.lookAhead finishLine) *> pure ()
 
 blockHeadLine :: P.Parser Target
 blockHeadLine = target <* trail <* finishLine where
@@ -96,7 +96,7 @@ fieldStart mexp_name = do
 fieldBlock :: P.Parser (String, Text) -- ^ (lower-case field name, block content)
 fieldBlock = impl where
   impl = do
-    _ <- ignoredLines
+    _ <- P.sepBy (P.try ignoredLine) (P.try P.eol)
     (field_name, level) <- P.try $ fieldStart Nothing
     field_trail <- P.manyTill P.anyChar finishLine
     rest <- remainingLines level
@@ -105,7 +105,7 @@ fieldBlock = impl where
   remainingLines field_indent_level = reverse <$> go [] where
     go cur_lines = (P.eof *> pure cur_lines) <|> foundSomething cur_lines
     foundSomething cur_lines = do
-      void $ many $ P.try emptyLine
+      void $ P.sepBy (P.try ignoredLine) (P.try P.eol)
       this_level <- P.lookAhead indent
       if this_level <= field_indent_level
         then pure cur_lines
@@ -113,9 +113,8 @@ fieldBlock = impl where
         _ <- indent
         this_line <- P.manyTill P.anyChar finishLine
         go (this_line : cur_lines)
-  ignoredLines = (P.eof *> pure ()) <|> (ignoredLine *> ignoredLines)
-  ignoredLine = P.try conditionalLine <|> P.try emptyLine <|> P.try bracesLine
-  bracesLine = (many $ P.satisfy (\c -> isLineSpace c || isBrace c)) *> finishLine
+  ignoredLine = conditionalLine <|> emptyLine <|> bracesLine
+  bracesLine = P.try $ (many $ P.satisfy (\c -> isLineSpace c || isBrace c)) *> P.lookAhead finishLine
 
 buildDependsLine :: P.Parser [PackageName]
 buildDependsLine = P.space *> (pname `P.endBy` ignored) where
@@ -127,7 +126,7 @@ buildDependsLine = P.space *> (pname `P.endBy` ignored) where
   finishItem = P.eof <|> (void $ P.char ',')
 
 conditionalLine :: P.Parser ()
-conditionalLine = void $ leader *> (term "if" <|> term "else") *> P.manyTill P.anyChar finishLine where
+conditionalLine = void $ P.try (leader *> (term "if" <|> term "else")) *> P.manyTill P.anyChar (P.lookAhead finishLine) where
   leader = many $ P.satisfy $ \c -> isLineSpace c || isCloseBrace c
   term :: String -> P.Parser ()
   term t = P.try (P.string' t *> P.lookAhead term_sep)
