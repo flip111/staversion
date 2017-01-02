@@ -66,9 +66,8 @@ finishLine :: P.Parser ()
 finishLine = P.eof <|> void P.eol
 
 emptyLine :: P.Parser ()
-emptyLine = indent *> (comment_line <|> only_braces) where
+emptyLine = indent *> (comment_line <|> finishLine) where
   comment_line = (P.try $ P.string "--") *> P.manyTill P.anyChar finishLine *> pure ()
-  only_braces = many (P.satisfy $ \c -> isLineSpace c || isBrace c) *> finishLine *> pure ()
 
 blockHeadLine :: P.Parser Target
 blockHeadLine = target <* trail <* finishLine where
@@ -97,7 +96,7 @@ fieldStart mexp_name = do
 fieldBlock :: P.Parser (String, Text) -- ^ (lower-case field name, block content)
 fieldBlock = impl where
   impl = do
-    _ <- many $ P.try conditionalLine
+    _ <- ignoredLines
     (field_name, level) <- P.try $ fieldStart Nothing
     field_trail <- P.manyTill P.anyChar finishLine
     rest <- remainingLines level
@@ -114,6 +113,9 @@ fieldBlock = impl where
         _ <- indent
         this_line <- P.manyTill P.anyChar finishLine
         go (this_line : cur_lines)
+  ignoredLines = (P.eof *> pure ()) <|> (ignoredLine *> ignoredLines)
+  ignoredLine = P.try conditionalLine <|> P.try emptyLine <|> P.try bracesLine
+  bracesLine = (many $ P.satisfy (\c -> isLineSpace c || isBrace c)) *> finishLine
 
 buildDependsLine :: P.Parser [PackageName]
 buildDependsLine = P.space *> (pname `P.endBy` ignored) where
@@ -134,7 +136,6 @@ conditionalLine = void $ leader *> (term "if" <|> term "else") *> P.manyTill P.a
 targetBlock :: P.Parser BuildDepends
 targetBlock = do
   target <- P.try blockHeadLine
-  _ <- many $ P.try emptyLine
   fields <- some fieldBlock
   let build_deps_blocks = map snd $ filter (("build-depends" ==) . fst) $ fields
   packages <- fmap (nub . concat) $ forM build_deps_blocks $ \block -> do
