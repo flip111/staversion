@@ -12,7 +12,6 @@ module Staversion.Internal.Cabal
 
 import Control.Applicative ((<*), (*>), (<|>), (<*>), many, some)
 import Control.Monad (void, mzero, forM)
-import Data.Bifunctor (first)
 import Data.Char (isAlpha, isDigit, toLower, isSpace)
 import Data.List (intercalate, nub)
 import Data.Monoid (mconcat)
@@ -40,7 +39,9 @@ data BuildDepends =
                } deriving (Show,Eq,Ord)
 
 loadCabalFile :: FilePath -> IO (Either ErrorMsg [BuildDepends])
-loadCabalFile cabal_filepath = first show <$> P.runParser (cabalParser <* P.eof) cabal_filepath <$> TIO.readFile cabal_filepath
+loadCabalFile cabal_filepath = mapLeft show <$> P.runParser (cabalParser <* P.eof) cabal_filepath <$> TIO.readFile cabal_filepath where
+  mapLeft f (Left l) = Left $ f l
+  mapLeft _ (Right r) = Right r
 
 isLineSpace :: Char -> Bool
 isLineSpace ' ' = True
